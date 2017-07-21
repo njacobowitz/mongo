@@ -203,6 +203,9 @@ const char* encodeMatchType(MatchExpression::MatchType mt) {
         case MatchExpression::INTERNAL_SCHEMA_MAX_PROPERTIES:
             return "internalSchemaMaxProperties";
             break;
+        case MatchExpression::INTERNAL_SCHEMA_ALLOWED_PROPERTIES:
+            return "internalSchemaAllowedProperties";
+            break;
         default:
             MONGO_UNREACHABLE;
             return "";

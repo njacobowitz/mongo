@@ -1037,6 +1037,22 @@ TEST(SerializeInternalSchema, ExpressionInternalSchemaMaxLengthSerializesCorrect
     ASSERT_BSONOBJ_EQ(*reserialized.getQuery(), serialize(reserialized.getMatchExpression()));
 }
 
+TEST(SerializeInternalSchema, ExpressionInternalSchemaAllowedPropertiesSerializesCorrectly) {
+    auto allowedProperties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    properties: ['a'],"
+        "    namePlaceholder: 'i',"
+        "    patternProperties: [{regex: /^a/, expression: {i: {$type: \"number\"}}}],"
+        "    otherwise: {i: {$type: \"number\"}}"
+        "}}");
+    Matcher original(allowedProperties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    Matcher reserialized(serialize(original.getMatchExpression()),
+                         ExtensionsCallbackDisallowExtensions(),
+                         kSimpleCollator);
+    ASSERT_BSONOBJ_EQ(*reserialized.getQuery(), allowedProperties);
+    ASSERT_BSONOBJ_EQ(*reserialized.getQuery(), serialize(reserialized.getMatchExpression()));
+}
+
 TEST(SerializeInternalSchema, ExpressionInternalSchemaCondSerializesCorrectly) {
     Matcher original(fromjson("{$_internalSchemaCond: [{a: 1}, {b: 2}, {c: 3}]}}"),
                      ExtensionsCallbackDisallowExtensions(),

@@ -28,7 +28,11 @@
  *    it in the license file.
  */
 
+#include "mongo/platform/basic.h"
+
 #include "mongo/db/matcher/expression_parser.h"
+
+#include <pcrecpp.h>
 
 #include "mongo/base/init.h"
 #include "mongo/bson/bsonmisc.h"
@@ -39,6 +43,8 @@
 #include "mongo/db/matcher/expression_geo.h"
 #include "mongo/db/matcher/expression_leaf.h"
 #include "mongo/db/matcher/expression_tree.h"
+#include "mongo/db/matcher/expression_with_placeholder.h"
+#include "mongo/db/matcher/schema/expression_internal_schema_allowed_properties.h"
 #include "mongo/db/matcher/schema/expression_internal_schema_cond.h"
 #include "mongo/db/matcher/schema/expression_internal_schema_max_items.h"
 #include "mongo/db/matcher/schema/expression_internal_schema_max_length.h"
@@ -445,6 +451,11 @@ StatusWithMatchExpression MatchExpressionParser::_parse(const BSONObj& obj,
             } else if (mongoutils::str::equals("_internalSchemaMaxProperties", rest)) {
                 return _parseTopLevelInternalSchemaSingleIntegerArgument<
                     InternalSchemaMaxPropertiesMatchExpression>(e);
+            } else if (mongoutils::str::equals("_internalSchemaAllowedProperties", rest)) {
+                auto allowedPropExpr = _parseInternalSchemaAllowedProperties(e, collator);
+                if (!allowedPropExpr.isOK())
+                    return allowedPropExpr.getStatus();
+                root->add(allowedPropExpr.getValue().release());
             } else if (mongoutils::str::equals("jsonSchema", rest)) {
                 if (e.type() != BSONType::Object) {
                     return {Status(ErrorCodes::TypeMismatch, "$jsonSchema must be an object")};
@@ -1238,6 +1249,192 @@ StatusWithMatchExpression MatchExpressionParser::_parseGeo(const char* name,
             return StatusWithMatchExpression(s);
         return {std::move(e)};
     }
+}
+
+StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProperties(
+    const BSONElement& elem, const CollatorInterface* collator) {
+    if (elem.type() != BSONType::Object) {
+        return {Status(ErrorCodes::FailedToParse,
+                       str::stream() << InternalSchemaAllowedPropertiesMatchExpression::kName
+                                     << " must be an object")};
+    }
+
+    InternalSchemaAllowedPropertiesMatchExpression::PropertiesSet properties;
+    InternalSchemaAllowedPropertiesMatchExpression::PatternArray patternProperties;
+    InternalSchemaAllowedPropertiesMatchExpression::Placeholder otherwise;
+    bool boolOtherwise;
+    boost::optional<std::string> namePlaceholder;
+
+    auto allowedPropertiesObj = elem.embeddedObject();
+    if (auto allowedElem = allowedPropertiesObj
+            [InternalSchemaAllowedPropertiesMatchExpression::kNamePlaceholder]) {
+        if (allowedElem.type() != BSONType::String) {
+            return {Status(
+                ErrorCodes::FailedToParse,
+                str::stream() << InternalSchemaAllowedPropertiesMatchExpression::kName << " "
+                              << InternalSchemaAllowedPropertiesMatchExpression::kNamePlaceholder
+                              << " must be a string")};
+        }
+
+        namePlaceholder = allowedElem.String();
+    }
+
+    for (auto&& allowedElem : allowedPropertiesObj) {
+        if (allowedElem.fieldNameStringData() ==
+            InternalSchemaAllowedPropertiesMatchExpression::kProperties) {
+            if (allowedElem.type() != BSONType::Array) {
+                return {Status(
+                    ErrorCodes::FailedToParse,
+                    str::stream() << InternalSchemaAllowedPropertiesMatchExpression::kName << " "
+                                  << InternalSchemaAllowedPropertiesMatchExpression::kProperties
+                                  << " must be an array")};
+            }
+            for (auto&& prop : allowedElem.Array()) {
+                if (prop.type() != BSONType::String) {
+                    return {Status(ErrorCodes::FailedToParse,
+                                   str::stream()
+                                       << InternalSchemaAllowedPropertiesMatchExpression::kName
+                                       << " failed to parse string property "
+                                       << prop)};
+                }
+                properties.insert(prop.String());
+            }
+
+        } else if (allowedElem.fieldNameStringData() ==
+                   InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties) {
+            if (allowedElem.type() != BSONType::Array) {
+                return {
+                    Status(ErrorCodes::FailedToParse,
+                           str::stream()
+                               << InternalSchemaAllowedPropertiesMatchExpression::kName
+                               << " "
+                               << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
+                               << " must be an array")};
+            }
+
+            if (!namePlaceholder) {
+                return {
+                    Status(ErrorCodes::FailedToParse,
+                           str::stream()
+                               << InternalSchemaAllowedPropertiesMatchExpression::kName
+                               << " "
+                               << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
+                               << " requires a namePlaceholder string")};
+            }
+
+            for (auto&& prop : allowedElem.Array()) {
+                if (prop.type() != BSONType::Object) {
+                    return {
+                        ErrorCodes::FailedToParse,
+                        str::stream()
+                            << InternalSchemaAllowedPropertiesMatchExpression::kName
+                            << " "
+                            << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
+                            << " must be an array of objects, but found an element of type "
+                            << elem.type()};
+                }
+
+                auto elemObj = prop.embeddedObject();
+                if (elemObj.nFields() != 2 || !elemObj.hasField("regex") ||
+                    !elemObj.hasField("expression")) {
+                    return {
+                        ErrorCodes::FailedToParse,
+                        str::stream()
+                            << InternalSchemaAllowedPropertiesMatchExpression::kName
+                            << " "
+                            << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
+                            << " must be an array of objects with 2 fields: regex and expression"};
+                }
+
+                auto matchExpResult = ExpressionWithPlaceholder::parse(
+                    elemObj["expression"].embeddedObject(), collator);
+
+                if (!matchExpResult.isOK()) {
+                    return matchExpResult.getStatus();
+                }
+
+                if (matchExpResult.getValue()->getPlaceholder() != namePlaceholder.get()) {
+                    return {Status(
+                        ErrorCodes::FailedToParse,
+                        str::stream()
+                            << InternalSchemaAllowedPropertiesMatchExpression::kName
+                            << " "
+                            << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
+                            << " requires top level field name to match the namePlaceholder "
+                               "string")};
+                }
+
+                auto regexValue = elemObj["regex"].value();
+                auto reStruct = InternalSchemaAllowedPropertiesMatchExpression::Regex(regexValue);
+
+                patternProperties.emplace_back(reStruct, std::move(matchExpResult.getValue()));
+            }
+
+        } else if (allowedElem.fieldNameStringData() ==
+                   InternalSchemaAllowedPropertiesMatchExpression::kOtherwise) {
+
+            if (allowedElem.type() == BSONType::Bool) {
+                boolOtherwise = allowedElem.boolean();
+            } else if (allowedElem.type() == BSONType::Object) {
+                if (!namePlaceholder) {
+                    return {Status(ErrorCodes::FailedToParse,
+                                   str::stream()
+                                       << InternalSchemaAllowedPropertiesMatchExpression::kName
+                                       << " "
+                                       << InternalSchemaAllowedPropertiesMatchExpression::kOtherwise
+                                       << " requires a namePlaceholder string")};
+                }
+
+                auto parsedSubExpr =
+                    ExpressionWithPlaceholder::parse(allowedElem.embeddedObject(), collator);
+                if (!parsedSubExpr.isOK()) {
+                    return parsedSubExpr.getStatus();
+                }
+
+                if (parsedSubExpr.getValue()->getPlaceholder() != namePlaceholder.get()) {
+                    return {Status(ErrorCodes::FailedToParse,
+                                   str::stream()
+                                       << InternalSchemaAllowedPropertiesMatchExpression::kName
+                                       << " "
+                                       << InternalSchemaAllowedPropertiesMatchExpression::kOtherwise
+                                       << " requires top level field name to match the "
+                                          "namePlaceholder string")};
+                }
+
+                otherwise = std::move(parsedSubExpr.getValue());
+            } else {
+                return {Status(
+                    ErrorCodes::FailedToParse,
+                    str::stream() << InternalSchemaAllowedPropertiesMatchExpression::kName << " "
+                                  << InternalSchemaAllowedPropertiesMatchExpression::kOtherwise
+                                  << " must be an object or boolean")};
+            }
+        } else if (allowedElem.fieldNameStringData() ==
+                   InternalSchemaAllowedPropertiesMatchExpression::kNamePlaceholder) {
+            continue;
+        } else {
+            return {Status(ErrorCodes::FailedToParse,
+                           str::stream() << InternalSchemaAllowedPropertiesMatchExpression::kName
+                                         << " unknown field "
+                                         << allowedElem.fieldName())};
+        }
+    }
+
+    auto allowedPropertiesExpr =
+        stdx::make_unique<InternalSchemaAllowedPropertiesMatchExpression>();
+
+    if (otherwise) {
+        allowedPropertiesExpr->init(std::move(properties),
+                                    std::move(patternProperties),
+                                    std::move(otherwise),
+                                    namePlaceholder.value_or(""));
+    } else {
+        allowedPropertiesExpr->init(std::move(properties),
+                                    std::move(patternProperties),
+                                    std::move(boolOtherwise),
+                                    namePlaceholder.value_or(""));
+    }
+    return {std::move(allowedPropertiesExpr)};
 }
 
 namespace {

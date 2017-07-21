@@ -268,6 +268,9 @@ private:
     StatusWithMatchExpression _parseTopLevelInternalSchemaSingleIntegerArgument(
         const BSONElement& elem) const;
 
+    StatusWithMatchExpression _parseInternalSchemaAllowedProperties(
+        const BSONElement& elem, const CollatorInterface* collator);
+
     // Performs parsing for the match extensions. We do not own this pointer - it has to live
     // as long as the parser is active.
     const ExtensionsCallback* _extensionsCallback;

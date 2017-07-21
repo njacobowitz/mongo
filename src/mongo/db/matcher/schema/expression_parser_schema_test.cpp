@@ -481,5 +481,287 @@ TEST(MatchExpressionParserSchemaTest, CondParsesThreeMatchExpresssions) {
         expr.getValue()->matchesBSON(fromjson("{climate: 'rainy', clothing: ['poncho']}")));
     ASSERT_FALSE(expr.getValue()->matchesBSON(fromjson("{clothing: ['jacket']}")));
 }
+
+//
+// Tests for parsing the $_internalSchemaAllowedProperties expression.
+//
+TEST(MatchExpressionParserSchemaTest, AllowedPropertiesOnlyAcceptsObjectArgument) {
+    BSONObj properties = BSON("$_internalSchemaAllowedProperties"
+                              << "prop1");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = BSON("$_internalSchemaAllowedProperties" << 1);
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = BSON("$_internalSchemaAllowedProperties" << true);
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = BSON("$_internalSchemaAllowedProperties" << BSON_ARRAY(1));
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = BSON("$_internalSchemaAllowedProperties" << BSON_ARRAY("prop1" << 1));
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = BSON("$_internalSchemaAllowedProperties" << BSONObj());
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_OK(result.getStatus());
+}
+
+TEST(MatchExpressionParserSchemaTest, AllowedPropertiesSubPropertiesMustBeArrayOfStrings) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    properties: 1"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    properties: \"1\""
+        "}}");
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    properties: [1]"
+        "}}");
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    properties: ['a']"
+        "}}");
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_OK(result.getStatus());
+}
+
+TEST(MatchExpressionParserSchemaTest,
+     AllowedPropertiesPatternPropertiesMustBeArrayOfParsableObjects) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    namePlaceholder: 'i',"
+        "    patternProperties: 1"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    namePlaceholder: 'i',"
+        "    patternProperties: ['a', /^b/]"
+        "}}");
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+}
+
+TEST(MatchExpressionParserSchemaTest, AllowedPropertiesOtherwiseMustBeParsableObject) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    otherwise: {$type: \"number\"}"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    otherwise: 1"
+        "}}");
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    otherwise: 'c'"
+        "}}");
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+}
+
+TEST(MatchExpressionParserSchemaTest, AllowedPropertiesPatternPropertiesRequiresNamePlaceholder) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    patternProperties: [{regex: /^a/, expression: {i: {$type: \"number\"}}}]"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    namePlaceholder: 'i',"
+        "    patternProperties: [{regex: /^a/, expression: {i: {$type: \"number\"}}}]"
+        "}}");
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_OK(result.getStatus());
+}
+
+TEST(MatchExpressionParserSchemaTest, AllowedPropertiesOtherwiseRequiresNamePlaceholder) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    otherwise: {i: {$type: \"number\"}}"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+
+    properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    namePlaceholder: 'i',"
+        "    otherwise: {i: {$type: \"number\"}}"
+        "}}");
+    result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_OK(result.getStatus());
+}
+
+TEST(MatchExpressionParserSchemaTest, AllowedPropertiesNamePlaceholderMustBeString) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    namePlaceholder: 1,"
+        "    otherwise: {i: {$type: \"number\"}}"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+}
+
+TEST(MatchExpressionParserSchemaTest,
+     AllowedPropertiesNamePlaceholderMustMatchTopLevelFieldNameOfPatternProperties) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    namePlaceholder: 'j',"
+        "    patternProperties: [{regex: /^a/, expression: {i: {$type: \"number\"}}}]"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+}
+
+TEST(MatchExpressionParserSchemaTest,
+     AllowedPropertiesNamePlaceholderMustMatchTopLevelFieldNameOfOtherwise) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "    namePlaceholder: 'j',"
+        "    otherwise: {i: {$type: \"number\"}}"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+}
+
+TEST(MatchExpressionParserSchemaTest, AllowedPropertiesCorrectlyParsesRegexes) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "     properties: ['x'],"
+        "     namePlaceholder: 'i',"
+        "     patternProperties: [{regex: /^a/, expression: {i: {$type: "
+        "\"number\"}}}, {regex: /b/i, expression: {i: {$type: \"number\"}}}],"
+        "     otherwise: {i: {$type: \"string\"}}"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_OK(result.getStatus());
+
+    ASSERT_TRUE(result.getValue()->matchesBSON(BSON("ax" << 1)));
+    ASSERT_TRUE(result.getValue()->matchesBSON(BSON("qqb" << 1)));
+    ASSERT_TRUE(result.getValue()->matchesBSON(BSON("bq" << 1)));
+    ASSERT_FALSE(result.getValue()->matchesBSON(BSON("xa" << 1)));
+}
+
+TEST(MatchExpressionParserSchemaTest, AllowedPropertiesCorrectlyParsesPatternProperties) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "     properties: ['x'],"
+        "     namePlaceholder: 'i',"
+        "     patternProperties: [{regex: /^y/, expression: {i: {$type: \"number\"}}}],"
+        "     otherwise: {i: {$type: \"number\"}}"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_OK(result.getStatus());
+
+    ASSERT_TRUE(result.getValue()->matchesBSON(BSON("yab" << 1)));
+    ASSERT_FALSE(result.getValue()->matchesBSON(BSON("yx"
+                                                     << "string")));
+    ASSERT_FALSE(result.getValue()->matchesBSON(BSON("yxz" << BSON_ARRAY(1))));
+}
+
+TEST(MatchExpressionParserSchemaTest, AllowedPropertiesCorrectlyParsesOtherwise) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "     properties: ['x'],"
+        "     namePlaceholder: 'i',"
+        "     patternProperties: [{regex: /^y/, expression: {i: {$type: \"number\"}}}],"
+        "     otherwise: {$or: ["
+        "          {i: {$not: {$type: \"array\"}}}, {i: {$_internalSchemaMinItems: 2}}"
+        "     ]}"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_OK(result.getStatus());
+
+    ASSERT_TRUE(result.getValue()->matchesBSON(BSON("x" << 1)));
+    ASSERT_TRUE(result.getValue()->matchesBSON(BSON("z"
+                                                    << "string")));
+    ASSERT_TRUE(result.getValue()->matchesBSON(BSON("z" << 1)));
+    ASSERT_TRUE(result.getValue()->matchesBSON(BSON("z" << BSON_ARRAY(1 << 2))));
+    ASSERT_FALSE(result.getValue()->matchesBSON(BSON("z" << BSON_ARRAY(1))));
+}
+
+TEST(MatchExpressionParserSchemaTest, FailsToParseTopLevelExpressionInPatternProperties) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "     properties: ['x'],"
+        "     namePlaceholder: 'i',"
+        "     patternProperties: [{regex: /^y/, expression: "
+        "       {$_internalSchemaAllowedProperties: {"
+        "         properties: ['y'],"
+        "         namePlaceholder: 'j',"
+        "         otherwise: {j: {$type: \"number\"}}"
+        "       }}}]"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+}
+
+TEST(MatchExpressionParserSchemaTest, FailsToParseTopLevelExpressionInOtherwise) {
+    auto properties = fromjson(
+        "{$_internalSchemaAllowedProperties: {"
+        "     properties: ['x'],"
+        "     namePlaceholder: 'i',"
+        "     otherwise: {$_internalSchemaAllowedProperties: {"
+        "         properties: ['y'],"
+        "         namePlaceholder: 'j',"
+        "         otherwise: {j: {$type: \"number\"}}"
+        "      }}"
+        "}}");
+    auto result = MatchExpressionParser::parse(
+        properties, ExtensionsCallbackDisallowExtensions(), kSimpleCollator);
+    ASSERT_NOT_OK(result.getStatus());
+}
 }  // namespace
 }  // namespace mongo
