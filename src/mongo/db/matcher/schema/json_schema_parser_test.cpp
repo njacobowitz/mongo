@@ -441,7 +441,67 @@ TEST(JSONSchemaParserTest, PatternTranslatesCorrectlyWithString) {
                                 << BSON("foo" << BSON("$type" << 2))))))))));
 
     ASSERT_BSONOBJ_EQ(builder.obj(), expected);
+  }
+
+TEST(JSONSchemaParserTest, FailsToParseIfOneOfIsNotArray) {
+    BSONObj schema = fromjson("{oneOf: 'foo'}");
+    auto result = JSONSchemaParser::parse(schema);
+    ASSERT_EQ(result.getStatus(), ErrorCodes::TypeMismatch);
 }
+
+TEST(JSONSchemaParserTest, oneOfTranslatesCorrectly) {
+  BSONObj schema = fromjson("{oneOf: [{type: 'number', minimum: 0}, {type: 'number', maximum: 10}]}");
+  auto result = JSONSchemaParser::parse(schema);
+  ASSERT_OK(result.getStatus());
+  BSONObjBuilder builder;
+  result.getValue()->serialize(&builder);
+  ASSERT_BSONOBJ_EQ(
+  builder.obj(), // check e
+  fromjson(
+    "[{$_internalSchemaXor:"
+        "[{$and: "
+          "[{$gte: 0}, {$type: 'number'}] "
+        "}, {$and: "
+          "[{$lte: 10}, {$type: 'number'}]"
+        "}]"
+    "}]")); // change 
+  }
+
+  TEST(JSONSchemaParserTest, oneOfTranslatesCorrectly2) {
+  BSONObj schema = fromjson("{oneOf: [{type: 'number'}, {type: 'number'}]}");
+  auto result = JSONSchemaParser::parse(schema);
+  ASSERT_OK(result.getStatus());
+  BSONObjBuilder builder;
+  result.getValue()->serialize(&builder);
+  ASSERT_BSONOBJ_EQ(
+    builder.obj(), // check e
+    fromjson(
+    "[ { $and: [ { $_internalSchemaXor: [ { $and: [ { $or: [ { $nor: [ { 0: { $exists: true } } ] }, { 0: { $type: 'number' } } ] } ] }, { $and: [ { $or: [ { $nor: [ { 1: { $exists: true } } ] }, { 1: { $type: 'number' } } ] } ] } ] } ] }"
+   
+    // "[{$_internalSchemaXor:"
+    //     "[{$and: "
+    //       "[{$gte: 0}, {$type: 'number'}] "
+    //     "}, {$and: "
+    //       "[{$lte: 10}, {$type: 'number'}]"
+    //     "}]"
+    // "}]" // change 
+
+    )); 
+  //$_internalSchemaXor
+  }
+
+  TEST(JSONSchemaParserTest, notTranslatesCorrectly) {
+    BSONObj schema = fromjson("{not: {type: 'number', minimum: 0}}");
+    auto result = JSONSchemaParser::parse(schema);
+    ASSERT_OK(result.getStatus());
+    BSONObjBuilder builder;
+    result.getValue()->serialize(&builder);
+    ASSERT_BSONOBJ_EQ(builder.obj(),
+                      fromjson("{$and: [{$and: [{$and: ["
+                               "{$or: [{$nor: [{$not: {$type: 'number'}}]}, {$not: {$gte: 0}}]},"
+                               "{$or: [{$nor: [{$not: {$exists: true}}]}, {$not: {$type: 'number'}}]}"
+                               "]}]}]}"));
+  }
 
 }  // namespace
 }  // namespace mongo
