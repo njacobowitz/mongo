@@ -42,7 +42,7 @@
 
 namespace mongo {
 
-namespace {
+namespace { // TODO: alphabatize
 // JSON Schema keyword constants.
 constexpr StringData kSchemaExclusiveMaximumKeyword = "exclusiveMaximum"_sd;
 constexpr StringData kSchemaExclusiveMinimumKeyword = "exclusiveMinimum"_sd;
