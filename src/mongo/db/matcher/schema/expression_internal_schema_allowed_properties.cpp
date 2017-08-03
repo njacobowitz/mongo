@@ -143,9 +143,9 @@ void InternalSchemaAllowedPropertiesMatchExpression::serialize(BSONObjBuilder* o
     BSONArrayBuilder patternPropBob(allowedPropBob.subarrayStart(kPatternProperties));
     for (auto&& item : _patternProperties) {
         BSONObjBuilder objBuilder(patternPropBob.subobjStart());
-        objBuilder.appendRegex("regex", item.first.serializedRegex);
+        objBuilder.appendRegex(kRegex, item.first.regexBodyString);
 
-        BSONObjBuilder subBob(objBuilder.subobjStart("expression"));
+        BSONObjBuilder subBob(objBuilder.subobjStart(kExpression));
         item.second->getFilter()->serialize(&subBob);
         subBob.doneFast();
         objBuilder.doneFast();
@@ -195,7 +195,7 @@ bool InternalSchemaAllowedPropertiesMatchExpression::equivalent(
         realOther->_patternProperties.end(),
         [](const auto& expr1, const auto& expr2) {
             return (expr1.second->getFilter()->equivalent(expr2.second->getFilter()) &&
-                    expr1.first.serializedRegex == expr2.first.serializedRegex);
+                    expr1.first.regexBodyString == expr2.first.regexBodyString);
         });
 }
 

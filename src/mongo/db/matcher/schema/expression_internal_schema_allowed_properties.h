@@ -39,29 +39,30 @@ namespace mongo {
 class InternalSchemaAllowedPropertiesMatchExpression final : public MatchExpression {
 public:
     struct Regex {
-        Regex(std::string x) : regex(x), serializedRegex(std::move(x)) {}
+        Regex(std::string x) : regex(x), regexBodyString(std::move(x)) {}
         Regex clone() const {
-            return Regex(serializedRegex);
+            return Regex(regexBodyString);
         };
 
         pcrecpp::RE regex;
-        std::string serializedRegex;
+        std::string regexBodyString;
     };
 
-    using PropertiesSet = stdx::unordered_set<std::string>;
-    using Placeholder = std::unique_ptr<ExpressionWithPlaceholder>;
+    using PropertiesSet = std::set<StringData>;
+    using Placeholder = std::unique_ptr<mongo::ExpressionWithPlaceholder>;
     using PatternElem = std::pair<Regex, Placeholder>;
     using PatternArray = std::vector<PatternElem>;
 
+    static constexpr StringData kExpression = "expression"_sd;
     static constexpr StringData kName = "$_internalSchemaAllowedProperties"_sd;
+    static constexpr StringData kNamePlaceholder = "namePlaceholder"_sd;
+    static constexpr StringData kOtherwise = "otherwise"_sd;
     static constexpr StringData kProperties = "properties"_sd;
     static constexpr StringData kPatternProperties = "patternProperties"_sd;
-    static constexpr StringData kOtherwise = "otherwise"_sd;
-    static constexpr StringData kNamePlaceholder = "namePlaceholder"_sd;
+    static constexpr StringData kRegex = "regex"_sd;
 
     InternalSchemaAllowedPropertiesMatchExpression()
         : MatchExpression(INTERNAL_SCHEMA_ALLOWED_PROPERTIES),
-          _otherwise(nullptr),
           _boolOtherwise(true) {}
 
     void init(PropertiesSet properties,
@@ -79,7 +80,7 @@ public:
               PatternArray patternProperties,
               bool otherwise,
               std::string namePlaceholder) {
-        if (patternProperties.size() > 0) {
+        if (!patternProperties.empty()) {
             invariant(!namePlaceholder.empty());
         };
         _properties = std::move(properties);
