@@ -849,7 +849,8 @@ StatusWithMatchExpression MatchExpressionParser::_parseElemMatch(const char* nam
             !mongoutils::str::equals("$or", elt.fieldName()) &&
             !mongoutils::str::equals("$where", elt.fieldName()) &&
             !mongoutils::str::equals("$_internalSchemaMinProperties", elt.fieldName()) &&
-            !mongoutils::str::equals("$_internalSchemaMaxProperties", elt.fieldName());
+            !mongoutils::str::equals("$_internalSchemaMaxProperties", elt.fieldName()) &&
+            !mongoutils::str::equals("$_internalSchemaAllowedProperties", elt.fieldName());
     }
 
     if (isElemMatchValue) {
