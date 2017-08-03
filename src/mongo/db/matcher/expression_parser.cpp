@@ -849,8 +849,7 @@ StatusWithMatchExpression MatchExpressionParser::_parseElemMatch(const char* nam
             !mongoutils::str::equals("$or", elt.fieldName()) &&
             !mongoutils::str::equals("$where", elt.fieldName()) &&
             !mongoutils::str::equals("$_internalSchemaMinProperties", elt.fieldName()) &&
-            !mongoutils::str::equals("$_internalSchemaMaxProperties", elt.fieldName()) &&
-            !mongoutils::str::equals("$_internalSchemaAllowedProperties", elt.fieldName());
+            !mongoutils::str::equals("$_internalSchemaMaxProperties", elt.fieldName());
     }
 
     if (isElemMatchValue) {
@@ -1252,32 +1251,19 @@ StatusWithMatchExpression MatchExpressionParser::_parseGeo(const char* name,
     }
 }
 
-/**
-StatusWith<PatternArray> MatchExpressionParser::_parsePatternProperties(const BSONObj& allowedElem, StringData namePlaceholder, const CollatorInterface* collator) {
-
-    ///????
-    return {std::move(patternProperties)};
-    // return patternProperties; //std::move?
-}
-**/
-
 StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProperties(
     const BSONElement& elem, const CollatorInterface* collator) {
-    using PropertiesSet = InternalSchemaAllowedPropertiesMatchExpression::PropertiesSet;
-    using PatternArray = InternalSchemaAllowedPropertiesMatchExpression::PatternArray;
-    using Placeholder = InternalSchemaAllowedPropertiesMatchExpression::Placeholder;
-
     if (elem.type() != BSONType::Object) {
         return {Status(ErrorCodes::FailedToParse,
                        str::stream() << InternalSchemaAllowedPropertiesMatchExpression::kName
                                      << " must be an object")};
     }
 
-    PropertiesSet properties;
-    PatternArray patternProperties;
-    Placeholder otherwise;
+    InternalSchemaAllowedPropertiesMatchExpression::PropertiesSet properties;
+    InternalSchemaAllowedPropertiesMatchExpression::PatternArray patternProperties;
+    InternalSchemaAllowedPropertiesMatchExpression::Placeholder otherwise;
     bool boolOtherwise;
-    StringData namePlaceholder;
+    boost::optional<std::string> namePlaceholder;
 
     auto allowedPropertiesObj = elem.embeddedObject();
     if (auto allowedElem = allowedPropertiesObj
@@ -1290,7 +1276,7 @@ StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProp
                               << " must be a string")};
         }
 
-        namePlaceholder = allowedElem.valueStringData();
+        namePlaceholder = allowedElem.String();
     }
 
     for (auto&& allowedElem : allowedPropertiesObj) {
@@ -1303,7 +1289,7 @@ StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProp
                                   << InternalSchemaAllowedPropertiesMatchExpression::kProperties
                                   << " must be an array")};
             }
-            for (auto&& prop : allowedElem.embeddedObject()) {
+            for (auto&& prop : allowedElem.Array()) {
                 if (prop.type() != BSONType::String) {
                     return {Status(ErrorCodes::FailedToParse,
                                    str::stream()
@@ -1313,19 +1299,9 @@ StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProp
                 }
                 properties.insert(prop.String());
             }
+
         } else if (allowedElem.fieldNameStringData() ==
                    InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties) {
-///
-/**
-            auto statusWithPatternProperties = _parsePatternProperties(allowedElem, namePlaceholder, collator); 
-            if (!statusWithPatternProperties.isOK()) {
-                return statusWithPatternProperties.getStatus();
-            }
-
-            properties = statusWithPatternProperties.getValue(); // TODO:: check
-
-**/
-
             if (allowedElem.type() != BSONType::Array) {
                 return {
                     Status(ErrorCodes::FailedToParse,
@@ -1336,7 +1312,7 @@ StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProp
                                << " must be an array")};
             }
 
-            if (!namePlaceholder) { // TODO: does this work on SD?
+            if (!namePlaceholder) {
                 return {
                     Status(ErrorCodes::FailedToParse,
                            str::stream()
@@ -1346,8 +1322,7 @@ StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProp
                                << " requires a namePlaceholder string")};
             }
 
-            auto patternProperties = stdx::make_unique<PatternArray>();
-            for (auto&& prop : allowedElem.embeddedObject()) {
+            for (auto&& prop : allowedElem.Array()) {
                 if (prop.type() != BSONType::Object) {
                     return {
                         ErrorCodes::FailedToParse,
@@ -1360,10 +1335,8 @@ StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProp
                 }
 
                 auto elemObj = prop.embeddedObject();
-                // if (elemObj.nFields() != 2 || elemObj["regex"].type() != BSONType::String || // TODO: still check if its regex...
-                //     elemObj["expression"].type() != BSONType::Object) {
-                if (elemObj.nFields() != 2 || elemObj.hasField("regex") || // TODO: still check if its regex...
-                    elemObj.hasField("expression")) {
+                if (elemObj.nFields() != 2 || !elemObj.hasField("regex") ||
+                    !elemObj.hasField("expression")) {
                     return {
                         ErrorCodes::FailedToParse,
                         str::stream()
@@ -1394,7 +1367,7 @@ StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProp
                 auto regexValue = elemObj["regex"].value();
                 auto reStruct = InternalSchemaAllowedPropertiesMatchExpression::Regex(regexValue);
 
-                patternProperties.emplace_back(std::move(reStruct), std::move(matchExpResult.getValue()));
+                patternProperties.emplace_back(reStruct, std::move(matchExpResult.getValue()));
             }
 
         } else if (allowedElem.fieldNameStringData() ==
@@ -1454,12 +1427,12 @@ StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProp
         allowedPropertiesExpr->init(std::move(properties),
                                     std::move(patternProperties),
                                     std::move(otherwise),
-                                    namePlaceholder);
+                                    namePlaceholder.value_or(""));
     } else {
         allowedPropertiesExpr->init(std::move(properties),
                                     std::move(patternProperties),
                                     std::move(boolOtherwise),
-                                    namePlaceholder);
+                                    namePlaceholder.value_or(""));
     }
     return {std::move(allowedPropertiesExpr)};
 }

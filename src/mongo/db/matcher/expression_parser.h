@@ -36,7 +36,6 @@
 #include "mongo/db/matcher/expression_leaf.h"
 #include "mongo/db/matcher/expression_tree.h"
 #include "mongo/db/matcher/extensions_callback.h"
-#include "mongo/db/matcher/schema/expression_internal_schema_allowed_properties.h"
 #include "mongo/stdx/functional.h"
 
 namespace mongo {
@@ -268,8 +267,6 @@ private:
     template <class T>
     StatusWithMatchExpression _parseTopLevelInternalSchemaSingleIntegerArgument(
         const BSONElement& elem) const;
-
-    // StatusWith<InternalSchemaAllowedPropertiesMatchExpression::PatternArray> _parsePatternProperties(const BSONObj& allowedElem, StringData namePlaceholder, const CollatorInterface* collator); // TODO:
 
     StatusWithMatchExpression _parseInternalSchemaAllowedProperties(
         const BSONElement& elem, const CollatorInterface* collator);
