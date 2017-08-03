@@ -1287,8 +1287,10 @@ StatusWith<PatternArray> MatchExpressionParser::_parsePatternProperties(const BS
         }
 
         auto elemObj = prop.embeddedObject();
+        // if (elemObj.nFields() != 2 || elemObj["regex"].type() != BSONType::String || // TODO: still check if its regex...
+        //     elemObj["expression"].type() != BSONType::Object) {
         if (elemObj.nFields() != 2 || elemObj["regex"].type() != BSONType::String || // TODO: still check if its regex...
-            elemObj["expression"].type() != BSONType::Object) {
+            elemObj.hasField("expression")) {
             return {
                 ErrorCodes::FailedToParse,
                 str::stream()
