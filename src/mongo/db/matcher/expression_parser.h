@@ -269,7 +269,7 @@ private:
     StatusWithMatchExpression _parseTopLevelInternalSchemaSingleIntegerArgument(
         const BSONElement& elem) const;
 
-    StatusWith<InternalSchemaAllowedPropertiesMatchExpression::PatternArray> _parsePatternProperties(const BSONObj& allowedElem, StringData namePlaceholder, const CollatorInterface* collator); // TODO:
+    // StatusWith<InternalSchemaAllowedPropertiesMatchExpression::PatternArray> _parsePatternProperties(const BSONObj& allowedElem, StringData namePlaceholder, const CollatorInterface* collator); // TODO:
 
     StatusWithMatchExpression _parseInternalSchemaAllowedProperties(
         const BSONElement& elem, const CollatorInterface* collator);

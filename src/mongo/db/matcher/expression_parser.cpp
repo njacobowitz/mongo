@@ -1252,81 +1252,14 @@ StatusWithMatchExpression MatchExpressionParser::_parseGeo(const char* name,
     }
 }
 
+/**
 StatusWith<PatternArray> MatchExpressionParser::_parsePatternProperties(const BSONObj& allowedElem, StringData namePlaceholder, const CollatorInterface* collator) {
-    if (allowedElem.type() != BSONType::Array) {
-        return {
-            Status(ErrorCodes::FailedToParse,
-                   str::stream()
-                       << InternalSchemaAllowedPropertiesMatchExpression::kName
-                       << " "
-                       << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
-                       << " must be an array")};
-    }
 
-    if (!namePlaceholder) { // TODO: does this work on SD?
-        return {
-            Status(ErrorCodes::FailedToParse,
-                   str::stream()
-                       << InternalSchemaAllowedPropertiesMatchExpression::kName
-                       << " "
-                       << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
-                       << " requires a namePlaceholder string")};
-    }
-
-    auto patternProperties = stdx::make_unique<PatternArray>();
-    for (auto&& prop : allowedElem.embeddedObject()) {
-        if (prop.type() != BSONType::Object) {
-            return {
-                ErrorCodes::FailedToParse,
-                str::stream()
-                    << InternalSchemaAllowedPropertiesMatchExpression::kName
-                    << " "
-                    << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
-                    << " must be an array of objects, but found an element of type "
-                    << elem.type()};
-        }
-
-        auto elemObj = prop.embeddedObject();
-        // if (elemObj.nFields() != 2 || elemObj["regex"].type() != BSONType::String || // TODO: still check if its regex...
-        //     elemObj["expression"].type() != BSONType::Object) {
-        if (elemObj.nFields() != 2 || elemObj["regex"].type() != BSONType::String || // TODO: still check if its regex...
-            elemObj.hasField("expression")) {
-            return {
-                ErrorCodes::FailedToParse,
-                str::stream()
-                    << InternalSchemaAllowedPropertiesMatchExpression::kName
-                    << " "
-                    << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
-                    << " must be an array of objects with 2 fields: regex and expression"};
-        }
-
-        auto matchExpResult = ExpressionWithPlaceholder::parse(
-            elemObj["expression"].embeddedObject(), collator);
-
-        if (!matchExpResult.isOK()) {
-            return matchExpResult.getStatus();
-        }
-
-        if (matchExpResult.getValue()->getPlaceholder() != namePlaceholder.get()) {
-            return {Status(
-                ErrorCodes::FailedToParse,
-                str::stream()
-                    << InternalSchemaAllowedPropertiesMatchExpression::kName
-                    << " "
-                    << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
-                    << " requires top level field name to match the namePlaceholder "
-                       "string")};
-        }
-
-        auto regexValue = elemObj["regex"].value();
-        auto reStruct = InternalSchemaAllowedPropertiesMatchExpression::Regex(regexValue);
-
-        patternProperties.emplace_back(std::move(reStruct), std::move(matchExpResult.getValue()));
-    }
     ///????
     return {std::move(patternProperties)};
     // return patternProperties; //std::move?
 }
+**/
 
 StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProperties(
     const BSONElement& elem, const CollatorInterface* collator) {
@@ -1383,12 +1316,86 @@ StatusWithMatchExpression MatchExpressionParser::_parseInternalSchemaAllowedProp
         } else if (allowedElem.fieldNameStringData() ==
                    InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties) {
 ///
+/**
             auto statusWithPatternProperties = _parsePatternProperties(allowedElem, namePlaceholder, collator); 
             if (!statusWithPatternProperties.isOK()) {
                 return statusWithPatternProperties.getStatus();
             }
 
             properties = statusWithPatternProperties.getValue(); // TODO:: check
+
+**/
+
+            if (allowedElem.type() != BSONType::Array) {
+                return {
+                    Status(ErrorCodes::FailedToParse,
+                           str::stream()
+                               << InternalSchemaAllowedPropertiesMatchExpression::kName
+                               << " "
+                               << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
+                               << " must be an array")};
+            }
+
+            if (!namePlaceholder) { // TODO: does this work on SD?
+                return {
+                    Status(ErrorCodes::FailedToParse,
+                           str::stream()
+                               << InternalSchemaAllowedPropertiesMatchExpression::kName
+                               << " "
+                               << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
+                               << " requires a namePlaceholder string")};
+            }
+
+            auto patternProperties = stdx::make_unique<PatternArray>();
+            for (auto&& prop : allowedElem.embeddedObject()) {
+                if (prop.type() != BSONType::Object) {
+                    return {
+                        ErrorCodes::FailedToParse,
+                        str::stream()
+                            << InternalSchemaAllowedPropertiesMatchExpression::kName
+                            << " "
+                            << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
+                            << " must be an array of objects, but found an element of type "
+                            << elem.type()};
+                }
+
+                auto elemObj = prop.embeddedObject();
+                // if (elemObj.nFields() != 2 || elemObj["regex"].type() != BSONType::String || // TODO: still check if its regex...
+                //     elemObj["expression"].type() != BSONType::Object) {
+                if (elemObj.nFields() != 2 || elemObj.hasField("regex") || // TODO: still check if its regex...
+                    elemObj.hasField("expression")) {
+                    return {
+                        ErrorCodes::FailedToParse,
+                        str::stream()
+                            << InternalSchemaAllowedPropertiesMatchExpression::kName
+                            << " "
+                            << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
+                            << " must be an array of objects with 2 fields: regex and expression"};
+                }
+
+                auto matchExpResult = ExpressionWithPlaceholder::parse(
+                    elemObj["expression"].embeddedObject(), collator);
+
+                if (!matchExpResult.isOK()) {
+                    return matchExpResult.getStatus();
+                }
+
+                if (matchExpResult.getValue()->getPlaceholder() != namePlaceholder.get()) {
+                    return {Status(
+                        ErrorCodes::FailedToParse,
+                        str::stream()
+                            << InternalSchemaAllowedPropertiesMatchExpression::kName
+                            << " "
+                            << InternalSchemaAllowedPropertiesMatchExpression::kPatternProperties
+                            << " requires top level field name to match the namePlaceholder "
+                               "string")};
+                }
+
+                auto regexValue = elemObj["regex"].value();
+                auto reStruct = InternalSchemaAllowedPropertiesMatchExpression::Regex(regexValue);
+
+                patternProperties.emplace_back(std::move(reStruct), std::move(matchExpResult.getValue()));
+            }
 
         } else if (allowedElem.fieldNameStringData() ==
                    InternalSchemaAllowedPropertiesMatchExpression::kOtherwise) {
