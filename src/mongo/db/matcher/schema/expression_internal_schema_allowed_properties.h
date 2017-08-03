@@ -49,7 +49,7 @@ public:
     };
 
     using PropertiesSet = std::set<StringData>;
-    using Placeholder = std::unique_ptr<mongo::ExpressionWithPlaceholder>;
+    using Placeholder = std::unique_ptr<ExpressionWithPlaceholder>;
     using PatternElem = std::pair<Regex, Placeholder>;
     using PatternArray = std::vector<PatternElem>;
 
