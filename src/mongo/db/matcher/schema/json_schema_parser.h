@@ -56,15 +56,17 @@ private:
     static StatusWithMatchExpression _parseProperties(StringData path,
                                                       BSONElement propertiesElt,
                                                       TypeMatchExpression* typeExpr);
+
     // Parser for the JSON Schema 'allOf', 'anyOf' 'oneOf' keyword.
     static StatusWithMatchExpression _parseLogicalOf(StringData path,
-                                       BSONElement logicalOf,
-                                       TypeMatchExpression* typeExpr,
-                                       StringData keyword);
+                                                     BSONElement logicalOf,
+                                                     TypeMatchExpression* typeExpr,
+                                                     StringData keyword);
+
     // Parser for the JSON Schema 'not' keyword.
     static StatusWithMatchExpression _parseNot(StringData path,
-                                       BSONElement logicalNot,
-                                       TypeMatchExpression* typeExpr);
+                                               BSONElement logicalNot,
+                                               TypeMatchExpression* typeExpr);
 };
 
 }  // namespace mongo

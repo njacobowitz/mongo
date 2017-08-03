@@ -33,6 +33,7 @@
 #include "mongo/bson/bsontypes.h"
 #include "mongo/db/matcher/expression_always_boolean.h"
 #include "mongo/db/matcher/expression_parser.h"
+#include "mongo/db/matcher/expression_tree.h"
 #include "mongo/db/matcher/schema/expression_internal_schema_max_length.h"
 #include "mongo/db/matcher/schema/expression_internal_schema_min_length.h"
 #include "mongo/db/matcher/schema/expression_internal_schema_object_match.h"
@@ -42,19 +43,19 @@
 
 namespace mongo {
 
-namespace { // TODO: alphabatize
+namespace {  // TODO: alphabatize
 // JSON Schema keyword constants.
+constexpr StringData kSchemaAllOfKeyword = "allOf"_sd;
+constexpr StringData kSchemaAnyOfKeyword = "anyOf"_sd;
 constexpr StringData kSchemaExclusiveMaximumKeyword = "exclusiveMaximum"_sd;
 constexpr StringData kSchemaExclusiveMinimumKeyword = "exclusiveMinimum"_sd;
 constexpr StringData kSchemaMaximumKeyword = "maximum"_sd;
 constexpr StringData kSchemaMinimumKeyword = "minimum"_sd;
 constexpr StringData kSchemaMaxLengthKeyword = "maxLength"_sd;
 constexpr StringData kSchemaMinLengthKeyword = "minLength"_sd;
-constexpr StringData kSchemaPatternKeyword = "pattern"_sd;
-constexpr StringData kSchemaAllOfKeyword = "allOf"_sd;
-constexpr StringData kSchemaAnyOfKeyword = "anyOf"_sd;
-constexpr StringData kSchemaOneOfKeyword = "oneOf"_sd;
 constexpr StringData kSchemaNotKeyword = "not"_sd;
+constexpr StringData kSchemaOneOfKeyword = "oneOf"_sd;
+constexpr StringData kSchemaPatternKeyword = "pattern"_sd;
 constexpr StringData kSchemaPropertiesKeyword = "properties"_sd;
 constexpr StringData kSchemaTypeKeyword = "type"_sd;
 
@@ -273,16 +274,16 @@ StatusWithMatchExpression parsePattern(StringData path,
 
 /**
  * Used to parse allOf, anyOf, oneOf JSON Schema keywords.
- * Each contain an array of schemas. 
+ * Each contain an array of schemas.
  */
 StatusWithMatchExpression JSONSchemaParser::_parseLogicalOf(StringData path,
-                                       BSONElement logicalOf,
-                                       TypeMatchExpression* typeExpr,
-                                       StringData keyword) {
+                                                            BSONElement logicalOf,
+                                                            TypeMatchExpression* typeExpr,
+                                                            StringData keyword) {
     if (logicalOf.type() != BSONType::Array) {
-        return {Status(ErrorCodes::TypeMismatch,
-                       str::stream() << "$jsonSchema keyword '" << keyword
-                                     << "' must be an array")};
+        return {
+            Status(ErrorCodes::TypeMismatch,
+                   str::stream() << "$jsonSchema keyword '" << keyword << "' must be an array")};
     }
 
     auto logicalOfObj = logicalOf.embeddedObject();
@@ -290,6 +291,7 @@ StatusWithMatchExpression JSONSchemaParser::_parseLogicalOf(StringData path,
         return Status(ErrorCodes::BadValue, " must be a nonempty array");
     }
 
+    // bad to make extra of these if not using them?
     auto allOfMatch = stdx::make_unique<AndMatchExpression>();
     auto anyOfMatch = stdx::make_unique<OrMatchExpression>();
     auto oneOfMatch = stdx::make_unique<InternalSchemaXorMatchExpression>();
@@ -302,7 +304,8 @@ StatusWithMatchExpression JSONSchemaParser::_parseLogicalOf(StringData path,
                                   << logicalOfElt.type()};
         }
 
-        auto nestedSchemaMatch = _parse(logicalOfElt.fieldNameStringData(), logicalOfElt.embeddedObject());
+        auto nestedSchemaMatch =
+            _parse(logicalOfElt.fieldNameStringData(), logicalOfElt.embeddedObject());
         if (!nestedSchemaMatch.isOK()) {
             return nestedSchemaMatch.getStatus();
         }
@@ -312,12 +315,12 @@ StatusWithMatchExpression JSONSchemaParser::_parseLogicalOf(StringData path,
             anyOfMatch->add(nestedSchemaMatch.getValue().release());
         } else if (keyword == kSchemaOneOfKeyword) {
             oneOfMatch->add(nestedSchemaMatch.getValue().release());
-        }   
+        }
     }
 
     auto objectMatch = stdx::make_unique<InternalSchemaObjectMatchExpression>();
     if (keyword == kSchemaAllOfKeyword) {
-        if (path.empty()) { // top level??
+        if (path.empty()) {  // top level??
             return {std::move(allOfMatch)};
         }
 
@@ -326,7 +329,7 @@ StatusWithMatchExpression JSONSchemaParser::_parseLogicalOf(StringData path,
             return objectMatchStatus;
         }
     } else if (keyword == kSchemaAnyOfKeyword) {
-        if (path.empty()) { // top level??
+        if (path.empty()) {  // top level??
             return {std::move(anyOfMatch)};
         }
 
@@ -335,7 +338,7 @@ StatusWithMatchExpression JSONSchemaParser::_parseLogicalOf(StringData path,
             return objectMatchStatus;
         }
     } else if (keyword == kSchemaOneOfKeyword) {
-        if (path.empty()) { // top level??
+        if (path.empty()) {  // top level??
             return {std::move(oneOfMatch)};
         }
 
@@ -349,8 +352,8 @@ StatusWithMatchExpression JSONSchemaParser::_parseLogicalOf(StringData path,
 }
 
 StatusWithMatchExpression JSONSchemaParser::_parseNot(StringData path,
-                                       BSONElement logicalNot,
-                                       TypeMatchExpression* typeExpr) {
+                                                      BSONElement logicalNot,
+                                                      TypeMatchExpression* typeExpr) {
     if (logicalNot.type() != BSONType::Object) {
         return {ErrorCodes::FailedToParse,
                 str::stream() << logicalNot.fieldNameStringData()
@@ -360,21 +363,23 @@ StatusWithMatchExpression JSONSchemaParser::_parseNot(StringData path,
 
     auto notMatch = stdx::make_unique<NotMatchExpression>();
 
-    auto StatusWithNotMatchExpression = _parse(logicalNot.fieldNameStringData(), logicalNot.embeddedObject());
+    auto StatusWithNotMatchExpression =
+        _parse(logicalNot.fieldNameStringData(), logicalNot.embeddedObject());
     if (!StatusWithNotMatchExpression.isOK()) {
         return StatusWithNotMatchExpression.getStatus();
     }
 
-    auto notMatchStatus = notMatch->init(StatusWithNotMatchExpression.getValue().release()); // is release OK?
+    auto notMatchStatus =
+        notMatch->init(StatusWithNotMatchExpression.getValue().release());  // is release OK?
 
     if (!notMatchStatus.isOK()) {
-            return notMatchStatus;
+        return notMatchStatus;
     }
 
     auto objectMatch = stdx::make_unique<InternalSchemaObjectMatchExpression>();
 
-    if (path.empty()) { // top level??
-            return {std::move(notMatch)};
+    if (path.empty()) {  // top level??
+        return {std::move(notMatch)};
     }
     auto objectMatchStatus = objectMatch->init(std::move(notMatch), path);
     if (!objectMatchStatus.isOK()) {
@@ -436,10 +441,10 @@ StatusWithMatchExpression JSONSchemaParser::_parse(StringData path, BSONObj sche
                                       {kSchemaExclusiveMinimumKeyword, {}},
                                       {kSchemaMaxLengthKeyword, {}},
                                       {kSchemaMinLengthKeyword, {}},
-                                      {kSchemaPatternKeyword, {}}};
+                                      {kSchemaPatternKeyword, {}},
                                       {kSchemaAllOfKeyword, {}},
                                       {kSchemaAnyOfKeyword, {}},
-                                      {kSchemaOneOfKeyword, {}}, 
+                                      {kSchemaOneOfKeyword, {}},
                                       {kSchemaNotKeyword, {}}};
 
     for (auto&& elt : schema) {
@@ -555,7 +560,8 @@ StatusWithMatchExpression JSONSchemaParser::_parse(StringData path, BSONObj sche
     }
 
     if (auto allOfElt = keywordMap[kSchemaAllOfKeyword]) {
-        auto allOfExpr = _parseLogicalOf(path, allOfElt, typeExpr.getValue().get(), kSchemaAllOfKeyword); 
+        auto allOfExpr =
+            _parseLogicalOf(path, allOfElt, typeExpr.getValue().get(), kSchemaAllOfKeyword);
         if (!allOfExpr.isOK()) {
             return allOfExpr;
         }
@@ -563,7 +569,8 @@ StatusWithMatchExpression JSONSchemaParser::_parse(StringData path, BSONObj sche
     }
 
     if (auto anyOfElt = keywordMap[kSchemaAnyOfKeyword]) {
-        auto anyOfExpr = _parseLogicalOf(path, anyOfElt, typeExpr.getValue().get(), kSchemaAnyOfKeyword); 
+        auto anyOfExpr =
+            _parseLogicalOf(path, anyOfElt, typeExpr.getValue().get(), kSchemaAnyOfKeyword);
         if (!anyOfExpr.isOK()) {
             return anyOfExpr;
         }
@@ -571,7 +578,8 @@ StatusWithMatchExpression JSONSchemaParser::_parse(StringData path, BSONObj sche
     }
 
     if (auto oneOfElt = keywordMap[kSchemaOneOfKeyword]) {
-        auto oneOfExpr = _parseLogicalOf(path, oneOfElt, typeExpr.getValue().get(), kSchemaOneOfKeyword); 
+        auto oneOfExpr =
+            _parseLogicalOf(path, oneOfElt, typeExpr.getValue().get(), kSchemaOneOfKeyword);
         if (!oneOfExpr.isOK()) {
             return oneOfExpr;
         }
@@ -579,11 +587,11 @@ StatusWithMatchExpression JSONSchemaParser::_parse(StringData path, BSONObj sche
     }
 
     if (auto notElt = keywordMap[kSchemaNotKeyword]) {
-        auto notExpr = _parseNot(path, notElt, typeExpr.getValue().get()); 
+        auto notExpr = _parseNot(path, notElt, typeExpr.getValue().get());
         if (!notExpr.isOK()) {
             return notExpr;
         }
-        andExpr->add(notExpr.getValue().release());    
+        andExpr->add(notExpr.getValue().release());
     }
 
     if (path.empty() && typeExpr.getValue() &&
